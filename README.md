@@ -35,7 +35,7 @@ include <ag04.scad>;
 
 3. Edit the parameters inside `wing_generator.scad` as needed (span, chord scaling, twist, resolution, etc.).
 
-4. Preview the model in OpenSCAD and export the mesh as an STL (`Design → Export as STL`) or use OpenSCAD's command-line export options if you prefer automation.
+4. Preview the model in OpenSCAD and export the mesh as an STL (`Design → Render, then File → Export as STL`) or use OpenSCAD's command-line export options if you prefer automation.
 
 Notes & tips
 - `wing_generator.scad` is the meat of the repository — start there to understand or change how wings are shaped and exported.
