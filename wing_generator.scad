@@ -66,10 +66,10 @@ module airfoil_section(foil, chord_mm=100,
         rotate([0, twist_deg, 0]) {
             // Orient the 2D airfoil so that:
             //   X = chord, Y = span (extrude), Z = thickness
-            rotate([-90, 0, 0]) {
-                linear_extrude(height = slice_thickness, center = true)
-                    airfoil2d(foil, chord_mm);
-            }
+            mirror([0, 0, 1])  // keep positive thickness pointing upward
+                rotate([-90, 0, 0])
+                    linear_extrude(height = slice_thickness, center = true)
+                        airfoil2d(foil, chord_mm);
         }
     }
 }
