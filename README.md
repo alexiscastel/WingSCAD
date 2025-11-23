@@ -44,4 +44,4 @@ Contact / Contribution
 - Suggestions and PRs are welcome (examples: support for different profile formats, automated export scripts, parameter presets).
 
 License
-- No explicit license is provided. Add a `LICENSE` file to make licensing explicit.
+- This project is distributed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). See `LICENSE` for full terms and attribution requirements.
