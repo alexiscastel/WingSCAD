@@ -2,6 +2,8 @@
 
 WingSCAD is focused on generating 3D wing meshes (STL) from 2D airfoil profiles using OpenSCAD. The central script is `wing_generator.scad`, which contains the geometry and export logic to build wing volumes from a profile. The `txt_to_scad.py` helper is provided only to make it easy to convert plain-text XY point lists into OpenSCAD variable files for inclusion.
 
+![Apogee wing render](ApogeeWing.png)
+
 Contents
 - `wing_generator.scad` - the primary OpenSCAD script: build wings and export STLs
 - `ag04.scad`, `ag08.scad` - example profile variable files (can be generated or provided)
