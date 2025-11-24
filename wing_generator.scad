@@ -59,19 +59,21 @@ module airfoil2d(foil, chord_mm=100) {
 // --------------------------------------------------------------------
 module airfoil_section(foil, chord_mm=100,
                        y_mm=0, twist_deg=0, x_offset_mm=0,
-                       slice_thickness=0.6) {
-    // Place the section at its spanwise and chordwise offsets
-    translate([x_offset_mm, y_mm, 0]) {
-        // Twist around Y axis through x=0 (then shifted by x_offset_mm)
-        rotate([0, twist_deg, 0]) {
-            // Orient the 2D airfoil so that:
-            //   X = chord, Y = span (extrude), Z = thickness
-            mirror([0, 0, 1])  // keep positive thickness pointing upward
-                rotate([-90, 0, 0])
-                    linear_extrude(height = slice_thickness, center = true)
-                        airfoil2d(foil, chord_mm);
+                       slice_thickness=0.6, dihedral_deg=0) {
+    // Apply dihedral after translation so the root can stay vertical when
+    // distribute_dihedral is used.
+    rotate([dihedral_deg, 0, 0])
+        translate([x_offset_mm, y_mm, 0]) {
+            // Twist around Y axis through x=0 (then shifted by x_offset_mm)
+            rotate([0, twist_deg, 0]) {
+                // Orient the 2D airfoil so that:
+                //   X = chord, Y = span (extrude), Z = thickness
+                mirror([0, 0, 1])  // keep positive thickness pointing upward
+                    rotate([-90, 0, 0])
+                        linear_extrude(height = slice_thickness, center = true)
+                            airfoil2d(foil, chord_mm);
+            }
         }
-    }
 }
 
 // Connect two stations into a solid panel
@@ -80,20 +82,57 @@ module wing_panel(foil_root, foil_tip,
                   root_y_mm, tip_y_mm,
                   root_twist_deg=0, tip_twist_deg=0,
                   root_x_offset_mm=0, tip_x_offset_mm=0,
-                  slice_thickness=0.6) {
+                  slice_thickness=0.6,
+                  root_dihedral_deg=0, tip_dihedral_deg=0) {
     hull() {
         airfoil_section(foil_root, root_chord_mm,
                         root_y_mm, root_twist_deg, root_x_offset_mm,
-                        slice_thickness);
+                        slice_thickness, root_dihedral_deg);
 
         airfoil_section(foil_tip,  tip_chord_mm,
                         tip_y_mm,  tip_twist_deg,  tip_x_offset_mm,
-                        slice_thickness);
+                        slice_thickness, tip_dihedral_deg);
     }
 }
 
+// -----------------------------------------------------------------
+// Reference planform area helpers
+// -----------------------------------------------------------------
+function sum_list(values, idx=0) =
+    idx >= len(values) ? 0 : values[idx] + sum_list(values, idx + 1);
+
+function _panel_area_half_mm2(stations, idx) =
+    let(
+        s0 = stations[idx],
+        s1 = stations[idx + 1],
+        y0 = len(s0) > 0 ? s0[0] : 0,
+        y1 = len(s1) > 0 ? s1[0] : 0,
+        c0 = len(s0) > 1 ? s0[1] : 0,
+        c1 = len(s1) > 1 ? s1[1] : 0,
+        span = abs(y1 - y0)
+    )
+    0.5 * span * (c0 + c1);
+
+function reference_area_half_mm2(stations) =
+    len(stations) < 2 ? 0 :
+        sum_list([ for (i = [0 : len(stations) - 2])
+                       _panel_area_half_mm2(stations, i) ]);
+
+function reference_area_mm2(stations) =
+    2 * reference_area_half_mm2(stations);
+
+function reference_area_m2(stations) =
+    reference_area_mm2(stations) / 1e6;
+
 // station = [ y_mm, chord_mm, twist_deg, x_offset_mm, foil_id ]
-module wing_from_stations(stations, slice_thickness=0.6) {
+module wing_from_stations(stations, slice_thickness=0.6,
+                          dihedral_deg=0,
+                          distribute_dihedral=false,
+                          keep_root_vertical=true) {
+    start_y = len(stations) > 0 ? stations[0][0] : 0;
+    end_y = len(stations) > 0 ? stations[len(stations) - 1][0] : start_y;
+    raw_span = end_y - start_y;
+    safe_span = raw_span == 0 ? 1 : raw_span;
     for (i = [0 : len(stations)-2]) {
         station_root = stations[i];
         station_tip  = stations[i+1];
@@ -113,12 +152,27 @@ module wing_from_stations(stations, slice_thickness=0.6) {
         foil_root   = resolve_foil(foil_id_r);
         foil_tip    = resolve_foil(foil_id_t);
 
+        dihedral_factor_root =
+            distribute_dihedral
+                ? (keep_root_vertical
+                       ? clamp01((y_root - start_y) / safe_span)
+                       : 1)
+                : 0;
+        dihedral_factor_tip =
+            distribute_dihedral
+                ? (keep_root_vertical
+                       ? clamp01((y_tip - start_y) / safe_span)
+                       : 1)
+                : 0;
+
         wing_panel(foil_root, foil_tip,
                    chord_r, chord_t,
                    y_root, y_tip,
                    twist_r, twist_t,
                    x_off_r, x_off_t,
-                   slice_thickness);
+                   slice_thickness,
+                   dihedral_deg * dihedral_factor_root,
+                   dihedral_deg * dihedral_factor_tip);
     }
 }
 
@@ -267,28 +321,58 @@ manual_stations = [
 use_elliptical_planform = true;
 my_stations = use_elliptical_planform ? elliptical_stations : manual_stations;
 
-// Flat half-wing
-module base_wing(slice_thickness=0.6)
-    wing_from_stations(my_stations, slice_thickness);
+wing_reference_area_mm2 = reference_area_mm2(my_stations);
+wing_reference_area_m2 = wing_reference_area_mm2 / 1e6;
+echo(str("Wing reference area = ", wing_reference_area_mm2, " mm^2 (",
+          wing_reference_area_m2, " m^2)"));
 
-// Right wing: apply dihedral as rotation about X
-module right_wing(dihedral_deg=6, slice_thickness=0.6)
-    rotate([dihedral_deg, 0, 0])
-        base_wing(slice_thickness);
+// Half-wing with optional per-section dihedral application
+module base_wing(slice_thickness=0.6,
+                 dihedral_deg=0,
+                 distribute_dihedral=false,
+                 keep_root_vertical=true)
+    wing_from_stations(my_stations, slice_thickness,
+                       dihedral_deg, distribute_dihedral,
+                       keep_root_vertical);
 
-// Left wing: mirror in Y after same dihedral
-module left_wing(dihedral_deg=6, slice_thickness=0.6)
-    mirror([0, 1, 0])
+// Right wing: either rotate the entire half or distribute dihedral per station
+module right_wing(dihedral_deg=6, slice_thickness=0.6,
+                  distribute_dihedral=false,
+                  keep_root_vertical=true) {
+    if (distribute_dihedral)
+        base_wing(slice_thickness, dihedral_deg,
+                  true, keep_root_vertical);
+    else
         rotate([dihedral_deg, 0, 0])
             base_wing(slice_thickness);
+}
+
+// Left wing: mirror across Y-axis; same dihedral options as right wing
+module left_wing(dihedral_deg=6, slice_thickness=0.6,
+                 distribute_dihedral=false,
+                 keep_root_vertical=true) {
+    if (distribute_dihedral)
+        mirror([0, 1, 0])
+            base_wing(slice_thickness, dihedral_deg,
+                      true, keep_root_vertical);
+    else
+        mirror([0, 1, 0])
+            rotate([dihedral_deg, 0, 0])
+                base_wing(slice_thickness);
+}
 
 // Draw both halves
 // Combine both halves and add angle of attack (AoA)
-module full_wing(dihedral_deg = 6, aoa_deg = 0, slice_thickness = 0.6) {
+module full_wing(dihedral_deg = 6, aoa_deg = 0,
+                 slice_thickness = 0.6,
+                 distribute_dihedral = false,
+                 keep_root_vertical = true) {
     // AoA: rotation about Y (span) axis
     rotate([0, aoa_deg, 0]) {
-        right_wing(dihedral_deg, slice_thickness);
-        left_wing(dihedral_deg, slice_thickness);
+        right_wing(dihedral_deg, slice_thickness,
+                   distribute_dihedral, keep_root_vertical);
+        left_wing(dihedral_deg, slice_thickness,
+                  distribute_dihedral, keep_root_vertical);
     }
 }
 
